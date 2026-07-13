@@ -1,6 +1,6 @@
 // Service worker : cache de l'app shell pour un fonctionnement hors-ligne.
 // Incrémenter CACHE_VERSION à chaque mise à jour des fichiers.
-const CACHE_VERSION = "dashboard-v1";
+const CACHE_VERSION = "dashboard-v2";
 const SHELL = [
   "./",
   "./index.html",
@@ -30,8 +30,11 @@ self.addEventListener("activate", (event) => {
 });
 
 // Réseau d'abord pour rester à jour, cache en secours (hors-ligne).
+// Seul l'app shell (même origine) est géré ici — les appels d'API externes
+// (intervals.icu…) passent en direct et gèrent leur propre cache en localStorage.
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  if (new URL(event.request.url).origin !== self.location.origin) return;
   event.respondWith(
     fetch(event.request)
       .then((response) => {
