@@ -10,7 +10,7 @@ import {
 } from "./store.js";
 import {
   trainingProvider, schoolProvider, bankProvider,
-  getIntegrations, setIntegration,
+  getIntegrations, setIntegration, testIntervalsConnection,
 } from "./providers.js";
 
 const app = document.getElementById("app");
@@ -124,7 +124,7 @@ function renderBike() {
 
   if (t.error) {
     return card("🚴", "Vélo", badge,
-      `<div class="hint">Impossible de joindre intervals.icu — vérifie ta connexion ou ta clé API (bouton ⚙︎ ci-dessus).</div>`);
+      `<div class="hint">⚠️ ${esc(typeof t.error === "string" ? t.error : "Impossible de joindre intervals.icu.")}<br>Réglages : bouton ⚙︎ ci-dessus.</div>`);
   }
 
   const stale = t.stale
@@ -167,33 +167,48 @@ function intervalsDialog() {
   const connected = trainingProvider.isLive;
   openDialog(`
     <h3>🚴 Connecter intervals.icu</h3>
-    <div class="field"><label>Athlete ID</label>
-      <input id="icu-id" placeholder="i123456" autocapitalize="off" autocorrect="off" value="${esc(cfg.athleteId)}">
-      <div class="note">Visible dans l'URL de ton profil intervals.icu (« i » suivi de chiffres).</div></div>
     <div class="field"><label>Clé API</label>
-      <input id="icu-key" type="password" autocapitalize="off" autocorrect="off" value="${esc(cfg.apiKey)}">
+      <input id="icu-key" type="password" autocapitalize="off" autocorrect="off" value="${esc(cfg.apiKey || "")}">
       <div class="note">intervals.icu → Settings (roue dentée) → <b>Developer Settings</b> → API Key.
       La clé reste uniquement sur ce téléphone.</div></div>
-    <div class="field"><div class="note">Astuce : ajoute tes courses dans le calendrier intervals.icu
+    <div class="field"><label>Athlete ID (optionnel)</label>
+      <input id="icu-id" placeholder="auto — laisser vide" autocapitalize="off" autocorrect="off" value="${esc(cfg.athleteId || "")}">
+      <div class="note">Laisse vide : ta clé suffit. À remplir uniquement si tu gères plusieurs athlètes.</div></div>
+    <div class="field"><div class="note" id="icu-status">Astuce : ajoute tes courses dans le calendrier intervals.icu
       (catégorie <b>Race</b>) pour alimenter le compte à rebours, et connecte
       Garmin/Strava à intervals.icu pour que tes sorties remontent toutes seules.</div></div>
     <div class="dialog-actions">
       ${connected ? `<button class="danger" data-disconnect>Déconnecter</button>` : ""}
       <button class="ghost" data-close>Annuler</button>
+      <button class="ghost" data-test>Tester</button>
       <button class="primary" data-save>OK</button>
     </div>`,
     (d) => {
+      const status = d.querySelector("#icu-status");
+      const readForm = () => ({
+        athleteId: d.querySelector("#icu-id").value.trim(),
+        apiKey: d.querySelector("#icu-key").value.trim(),
+      });
+
       d.querySelector("[data-close]").onclick = () => d.close();
       if (connected) d.querySelector("[data-disconnect]").onclick = () => {
         setIntegration("intervals", null);
         d.close();
         refreshExternal();
       };
+      d.querySelector("[data-test]").onclick = async () => {
+        const form = readForm();
+        if (!form.apiKey) { status.textContent = "Entre d'abord ta clé API."; return; }
+        status.textContent = "Test en cours…";
+        const result = await testIntervalsConnection(form);
+        status.innerHTML = result.ok
+          ? "✅ Connexion réussie ! Appuie sur OK pour enregistrer."
+          : `⚠️ ${esc(result.message)}`;
+      };
       d.querySelector("[data-save]").onclick = () => {
-        const athleteId = d.querySelector("#icu-id").value.trim();
-        const apiKey = d.querySelector("#icu-key").value.trim();
-        if (!athleteId || !apiKey) return;
-        setIntegration("intervals", { athleteId, apiKey });
+        const form = readForm();
+        if (!form.apiKey) { status.textContent = "Entre d'abord ta clé API."; return; }
+        setIntegration("intervals", form);
         d.close();
         external.training = null; // état « Chargement… » pendant l'appel
         render();

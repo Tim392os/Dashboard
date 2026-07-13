@@ -44,14 +44,49 @@ function inDays(n) {
 
 // ---------- Vélo : intervals.icu ----------
 
+/** L'API accepte l'athlete id `0` = « le propriétaire de la clé » : l'ID
+ *  explicite est donc optionnel et ne sert qu'aux comptes multi-athlètes. */
+function icuAthleteId(cfg) {
+  const id = String(cfg.athleteId || "").trim();
+  return id === "" ? "0" : id;
+}
+
 async function icuGet(cfg, path, params = {}) {
-  const url = new URL(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(cfg.athleteId)}/${path}`);
+  const url = new URL(`https://intervals.icu/api/v1/athlete/${encodeURIComponent(icuAthleteId(cfg))}/${path}`);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
   const res = await fetch(url, {
     headers: { Authorization: "Basic " + btoa("API_KEY:" + cfg.apiKey) },
   });
-  if (!res.ok) throw new Error(`intervals.icu HTTP ${res.status}`);
+  if (!res.ok) {
+    const error = new Error(`intervals.icu HTTP ${res.status}`);
+    error.status = res.status;
+    throw error;
+  }
   return res.json();
+}
+
+/** Message d'erreur précis et actionnable pour l'utilisateur. */
+export function icuErrorMessage(error) {
+  switch (error?.status) {
+    case 401:
+    case 403:
+      return "Clé API refusée par intervals.icu — vérifie la clé (Settings → Developer Settings) ou regénère-la.";
+    case 404:
+      return "Athlète introuvable — laisse le champ Athlete ID vide (recommandé).";
+    default:
+      return "intervals.icu injoignable (réseau ou blocage navigateur). Réessaie ; si ça persiste, préviens-moi en précisant ce message.";
+  }
+}
+
+/** Test de connexion léger : valide la clé et l'athlete id. */
+export async function testIntervalsConnection(cfg) {
+  const today = todayKey();
+  try {
+    await icuGet(cfg, "wellness", { oldest: today, newest: today });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: icuErrorMessage(error) };
+  }
 }
 
 async function fetchIntervalsSummary(cfg) {
@@ -140,8 +175,7 @@ function demoTrainingSummary() {
 
 export const trainingProvider = {
   get isLive() {
-    const cfg = getIntegrations().intervals;
-    return Boolean(cfg?.athleteId && cfg?.apiKey);
+    return Boolean(getIntegrations().intervals?.apiKey);
   },
 
   get sourceName() {
@@ -155,13 +189,13 @@ export const trainingProvider = {
       const summary = await fetchIntervalsSummary(cfg);
       localStorage.setItem(TRAINING_CACHE_KEY, JSON.stringify({ at: Date.now(), summary }));
       return summary;
-    } catch {
+    } catch (error) {
       // Hors-ligne ou clé invalide : dernières données connues si disponibles.
       try {
         const cached = JSON.parse(localStorage.getItem(TRAINING_CACHE_KEY));
         if (cached?.summary) return { ...cached.summary, stale: true };
       } catch { /* pas de cache */ }
-      return { error: true };
+      return { error: icuErrorMessage(error) };
     }
   },
 };

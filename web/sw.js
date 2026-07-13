@@ -1,6 +1,6 @@
 // Service worker : cache de l'app shell pour un fonctionnement hors-ligne.
 // Incrémenter CACHE_VERSION à chaque mise à jour des fichiers.
-const CACHE_VERSION = "dashboard-v2";
+const CACHE_VERSION = "dashboard-v3";
 const SHELL = [
   "./",
   "./index.html",
