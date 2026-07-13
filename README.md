@@ -1,10 +1,37 @@
 # Dashboard — tableau de bord personnel pour iPhone
 
-Application iPhone native **SwiftUI** (iOS 17+) : une seule page qui regroupe
-toute la journée — tâches, objectifs, vélo, école, habitudes, statistiques,
-finances, compteurs et notes rapides. Design Apple moderne : fond noir profond,
-cartes translucides (glassmorphism léger), coins arrondis continus, animations
-spring, typographie système SF Pro.
+Tableau de bord d'une seule page qui regroupe toute la journée — tâches,
+objectifs, vélo, école, habitudes, statistiques, finances, compteurs et notes
+rapides. Design Apple moderne : fond noir profond, cartes translucides
+(glassmorphism léger), coins arrondis continus, animations spring, typographie
+système SF Pro.
+
+Le dépôt contient **deux versions** :
+
+| | Dossier | Pour qui |
+|---|---|---|
+| **App native SwiftUI** (iOS 17+) | `Dashboard/` + `Dashboard.xcodeproj` | Nécessite un Mac avec Xcode pour compiler ; seule version avec Apple Santé (sommeil automatique) |
+| **PWA (application web)** | `web/` | Aucun Mac requis : s'installe depuis Safari via « Ajouter à l'écran d'accueil » ; sommeil en saisie manuelle |
+
+## Installer la PWA (sans Mac)
+
+1. Héberger le dossier `web/` en HTTPS. Le workflow
+   `.github/workflows/deploy-pages.yml` déploie automatiquement sur
+   **GitHub Pages** à chaque push sur `main` (Settings → Pages → Source :
+   « GitHub Actions »). ⚠️ Pages sur un dépôt **privé** exige un compte GitHub
+   payant — alternatives gratuites : rendre le dépôt public, ou déployer
+   `web/` sur Cloudflare Pages / Netlify / Vercel (gratuits, dépôts privés OK).
+2. Ouvrir l'URL dans **Safari** sur l'iPhone.
+3. Bouton **Partager** → **Sur l'écran d'accueil**. L'app s'ouvre plein écran,
+   fonctionne hors-ligne (service worker) et garde ses données sur l'appareil
+   (localStorage — rien n'est envoyé sur un serveur).
+
+La PWA reprend l'architecture de l'app native : les sources externes sont dans
+`web/js/providers.js` derrière une interface commune (`{ isLive, fetchSummary }`)
+— mode démo tant qu'une vraie intégration (via un petit backend qui garde les
+secrets OAuth) n'est pas branchée.
+
+# Version native SwiftUI
 
 ## Compiler
 
