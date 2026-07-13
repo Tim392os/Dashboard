@@ -75,7 +75,8 @@ toucher aux vues ni aux modèles**.
 | Source | Statut | Détails |
 |---|---|---|
 | **Apple Santé (sommeil)** | ✅ Fonctionnel | HealthKit, lecture seule, autorisation demandée au premier lancement |
-| **TrainingPeaks** | 🔌 Prêt à brancher | L'API officielle (`api.trainingpeaks.com`) est réservée aux partenaires : demander un accès développeur (client OAuth2), puis stocker le jeton via `Keychain.set(_:for: .trainingPeaksToken)`. Le provider s'active automatiquement. En attendant : mode démo. |
+| **Vélo — intervals.icu (PWA)** | ✅ Fonctionnel | Carte Vélo → bouton ⚙︎ : saisir l'Athlete ID et la clé API (intervals.icu → Settings → Developer Settings). La clé reste sur l'appareil (localStorage). Courses = événements « Race » du calendrier intervals.icu ; les activités remontent via la synchro Garmin/Strava d'intervals.icu. |
+| **TrainingPeaks (app native)** | 🔌 Prêt à brancher | L'API officielle (`api.trainingpeaks.com`) est réservée aux partenaires : demander un accès développeur (client OAuth2), puis stocker le jeton via `Keychain.set(_:for: .trainingPeaksToken)`. Le provider s'active automatiquement. En attendant : mode démo. |
 | **Cabanga (école)** | 🔌 Prêt à brancher | Pas d'API publique documentée à ce jour. `CabangaProvider` est le point d'accroche ; ne jamais scraper avec les identifiants de l'élève — uniquement une méthode approuvée par l'école. En attendant : mode démo. |
 | **BNP Paribas (finances)** | 🔌 Prêt à brancher | Les API PSD2 de BNP sont réservées aux prestataires agréés (AISP). Voie réaliste : un agrégateur agréé (Tink, Powens, GoCardless Bank Account Data…) via `OpenBankingProvider`. En attendant : saisie manuelle. |
 | **Temps d'écran** | ✋ Saisie manuelle | Apple n'expose pas les totaux Temps d'écran aux apps tierces (l'API DeviceActivity ne fournit pas de valeurs brutes). Saisie rapide prévue dans la carte Habitudes. |

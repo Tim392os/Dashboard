@@ -8,7 +8,10 @@ import {
   formatDay, formatHours, formatEuro,
   archiveOldTasks, habitsForDay, setHabit, currentStreak, FRUITS_TARGET,
 } from "./store.js";
-import { trainingProvider, schoolProvider, bankProvider } from "./providers.js";
+import {
+  trainingProvider, schoolProvider, bankProvider,
+  getIntegrations, setIntegration,
+} from "./providers.js";
 
 const app = document.getElementById("app");
 
@@ -116,8 +119,16 @@ function renderGoal(goal) {
 
 function renderBike() {
   const t = external.training;
-  const badge = `<span class="badge ${trainingProvider.isLive ? "live" : ""}">${trainingProvider.isLive ? "TrainingPeaks" : "Démo"}</span>`;
+  const badge = `<button class="badge ${trainingProvider.isLive ? "live" : ""}" data-action="bike-settings">${trainingProvider.sourceName} · ⚙︎</button>`;
   if (!t) return card("🚴", "Vélo", badge, `<div class="hint">Chargement…</div>`);
+
+  if (t.error) {
+    return card("🚴", "Vélo", badge,
+      `<div class="hint">Impossible de joindre intervals.icu — vérifie ta connexion ou ta clé API (bouton ⚙︎ ci-dessus).</div>`);
+  }
+
+  const stale = t.stale
+    ? `<div class="hint">Hors-ligne — dernières données connues.</div>` : "";
 
   const race = t.nextRace ? `
     <div class="race-hero">
@@ -140,11 +151,55 @@ function renderBike() {
     <div class="tiles" style="margin-top:12px">
       <div class="tile"><div class="value">${formatHours(t.recentLoad.last7DaysHours)}</div><div class="label">7 derniers jours</div></div>
       <div class="tile"><div class="value">${Math.round(t.recentLoad.last7DaysTSS)}</div><div class="label">TSS · 7 jours</div></div>
-      <div class="tile"><div class="value">${Math.round(t.recentLoad.fitnessCTL)}</div><div class="label">Forme (CTL)</div></div>
+      ${t.recentLoad.fitnessCTL != null ? `<div class="tile"><div class="value">${Math.round(t.recentLoad.fitnessCTL)}</div><div class="label">Forme (CTL)</div></div>` : ""}
     </div>` : "";
 
-  return card("🚴", "Vélo", badge,
-    `${race}<div class="subhead">Prochains entraînements</div>${workouts}${load}`);
+  const workoutsBlock = workouts
+    ? `<div class="subhead">Prochains entraînements</div>${workouts}`
+    : (trainingProvider.isLive ? `<div class="hint">Aucun entraînement planifié dans intervals.icu.</div>` : "");
+
+  return card("🚴", "Vélo", badge, `${stale}${race}${workoutsBlock}${load}`);
+}
+
+/** Connexion intervals.icu : la clé API reste sur ce téléphone (localStorage). */
+function intervalsDialog() {
+  const cfg = getIntegrations().intervals || { athleteId: "", apiKey: "" };
+  const connected = trainingProvider.isLive;
+  openDialog(`
+    <h3>🚴 Connecter intervals.icu</h3>
+    <div class="field"><label>Athlete ID</label>
+      <input id="icu-id" placeholder="i123456" autocapitalize="off" autocorrect="off" value="${esc(cfg.athleteId)}">
+      <div class="note">Visible dans l'URL de ton profil intervals.icu (« i » suivi de chiffres).</div></div>
+    <div class="field"><label>Clé API</label>
+      <input id="icu-key" type="password" autocapitalize="off" autocorrect="off" value="${esc(cfg.apiKey)}">
+      <div class="note">intervals.icu → Settings (roue dentée) → <b>Developer Settings</b> → API Key.
+      La clé reste uniquement sur ce téléphone.</div></div>
+    <div class="field"><div class="note">Astuce : ajoute tes courses dans le calendrier intervals.icu
+      (catégorie <b>Race</b>) pour alimenter le compte à rebours, et connecte
+      Garmin/Strava à intervals.icu pour que tes sorties remontent toutes seules.</div></div>
+    <div class="dialog-actions">
+      ${connected ? `<button class="danger" data-disconnect>Déconnecter</button>` : ""}
+      <button class="ghost" data-close>Annuler</button>
+      <button class="primary" data-save>OK</button>
+    </div>`,
+    (d) => {
+      d.querySelector("[data-close]").onclick = () => d.close();
+      if (connected) d.querySelector("[data-disconnect]").onclick = () => {
+        setIntegration("intervals", null);
+        d.close();
+        refreshExternal();
+      };
+      d.querySelector("[data-save]").onclick = () => {
+        const athleteId = d.querySelector("#icu-id").value.trim();
+        const apiKey = d.querySelector("#icu-key").value.trim();
+        if (!athleteId || !apiKey) return;
+        setIntegration("intervals", { athleteId, apiKey });
+        d.close();
+        external.training = null; // état « Chargement… » pendant l'appel
+        render();
+        refreshExternal();
+      };
+    });
 }
 
 // ---------- École ----------
@@ -213,8 +268,9 @@ function renderHabits(s) {
 
 function renderStats(s) {
   const streak = currentStreak();
-  const yearHours = external.training
-    ? Object.values(external.training.yearHoursByMonth).reduce((a, b) => a + b, 0) : 0;
+  const hoursByMonth = external.training?.yearHoursByMonth || null;
+  const yearHours = hoursByMonth
+    ? Object.values(hoursByMonth).reduce((a, b) => a + b, 0) : 0;
 
   return card("📊", "Statistiques", "", `
     <div class="tiles">
@@ -225,8 +281,8 @@ function renderStats(s) {
       <div class="tile"><div class="value">${s.recipes.length}</div><div class="label">Recettes testées</div></div>
       <div class="tile"><div class="value" style="color:var(--good)">${formatEuro(s.finance.moneySaved)}</div><div class="label">Argent économisé</div></div>
     </div>
-    ${external.training ? `<div class="subhead">Heures d'entraînement par mois</div>
-    <div class="chart-wrap">${barChart(external.training.yearHoursByMonth)}</div>` : ""}
+    ${hoursByMonth && Object.keys(hoursByMonth).length ? `<div class="subhead">Heures d'entraînement par mois</div>
+    <div class="chart-wrap">${barChart(hoursByMonth)}</div>` : ""}
     <button class="row-btn" data-action="open-recipes">🍴 Historique des recettes <span class="chev">›</span></button>`);
 }
 
@@ -604,6 +660,7 @@ document.addEventListener("click", (e) => {
         onSave: (v) => setHabit(todayKey(), { screenMinutes: Math.round(v * 60) }),
       });
       break;
+    case "bike-settings": intervalsDialog(); break;
     case "edit-finance": editFinanceDialog(); break;
     case "edit-countdown": editCountdownDialog(s.countdowns.find((x) => x.id === id)); break;
     case "add-countdown": editCountdownDialog(null); break;
@@ -685,26 +742,27 @@ function hideTip() { tip.style.display = "none"; }
 
 // ============================== Démarrage ==============================
 
-initStore();
-subscribe(render);
-render();
-
-(async () => {
+async function refreshExternal() {
   const [training, school] = await Promise.all([
-    trainingProvider.fetchSummary().catch(() => null),
+    trainingProvider.fetchSummary().catch(() => ({ error: true })),
     schoolProvider.fetchSummary().catch(() => null),
   ]);
   external.training = training;
   external.school = school;
   if (bankProvider) external.bank = await bankProvider.fetchSummary().catch(() => null);
   render();
-})();
+}
+
+initStore();
+subscribe(render);
+render();
+refreshExternal();
 
 // Changement de jour / retour au premier plan : archivage + rafraîchissement.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     archiveOldTasks();
-    render();
+    refreshExternal();
   }
 });
 
