@@ -114,6 +114,8 @@ function seed() {
       { id: uid(), name: "Voyage", icon: "✈️", date: plusMonths(2), repeatsYearly: false },
     ],
     finance: { available: 0, savings: 0, monthExpenses: 0, savingsGoal: 1000, moneySaved: 0 },
+    // Opérations importées depuis un relevé CSV (banque) — jamais d'identifiants.
+    transactions: [],
   };
 }
 
@@ -124,6 +126,7 @@ export function initStore() {
     state = null;
   }
   if (!state || typeof state !== "object") state = seed();
+  if (!Array.isArray(state.transactions)) state.transactions = []; // migration v1 → v2
   archiveOldTasks();
   save();
   return state;

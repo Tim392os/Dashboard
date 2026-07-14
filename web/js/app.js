@@ -12,6 +12,7 @@ import {
   trainingProvider, schoolProvider, bankProvider,
   getIntegrations, setIntegration, testIntervalsConnection,
 } from "./providers.js";
+import { parseBankCSV, monthExpensesFrom } from "./csv.js";
 
 const app = document.getElementById("app");
 
@@ -343,7 +344,11 @@ function renderFinance(s) {
   const bank = external.bank;
   const available = bank?.available ?? f.available;
   const savings = bank?.savings ?? f.savings;
-  const expenses = bank?.monthExpenses ?? f.monthExpenses;
+  // Priorité : agrégateur bancaire > relevé CSV importé > saisie manuelle.
+  const now = new Date();
+  const csvExpenses = s.transactions.length
+    ? monthExpensesFrom(s.transactions, now.getFullYear(), now.getMonth() + 1) : null;
+  const expenses = bank?.monthExpenses ?? csvExpenses ?? f.monthExpenses;
   const progress = f.savingsGoal > 0 ? Math.min(savings / f.savingsGoal, 1) : 0;
 
   return card("💰", "Finances",
@@ -356,7 +361,49 @@ function renderFinance(s) {
     <div class="subhead">Objectif d'épargne — ${Math.round(progress * 100)}%</div>
     <div class="progress"><div style="width:${progress * 100}%;background:var(--good)"></div></div>
     <div class="goal-meta"><span>${formatEuro(savings)} / ${formatEuro(f.savingsGoal)}</span>
-    <span>${bank ? "Open Banking connecté" : "Saisie manuelle — aucun identifiant stocké"}</span></div>`);
+    <span>${bank ? "Open Banking connecté"
+      : csvExpenses != null ? `Relevé CSV : ${s.transactions.length} opérations`
+      : "Saisie manuelle — aucun identifiant stocké"}</span></div>
+    <button class="row-btn" data-action="import-csv">📥 Importer un relevé CSV (Easy Banking) <span class="chev">›</span></button>`);
+}
+
+/** Import d'un relevé CSV : lu localement, fusion sans doublons. */
+async function handleCSVImport(file) {
+  let text = await file.text();
+  // Easy Banking exporte parfois en Latin-1 : si l'UTF-8 a produit des «  »,
+  // on retente avec l'encodage windows-1252.
+  if (text.includes("�")) {
+    try {
+      text = new TextDecoder("windows-1252").decode(await file.arrayBuffer());
+    } catch { /* on garde la version UTF-8 */ }
+  }
+  const { transactions, error } = parseBankCSV(text);
+  if (error) {
+    openDialog(`<h3>📥 Import CSV</h3><div class="field"><div class="note">⚠️ ${esc(error)}</div></div>
+      <div class="dialog-actions"><button class="primary" data-close>OK</button></div>`,
+      (d) => { d.querySelector("[data-close]").onclick = () => d.close(); });
+    return;
+  }
+  let added = 0;
+  update((s) => {
+    const known = new Set(s.transactions.map((t) => t.key));
+    for (const t of transactions) {
+      if (!known.has(t.key)) {
+        s.transactions.push(t);
+        known.add(t.key);
+        added++;
+      }
+    }
+    s.transactions.sort((a, b) => a.date.localeCompare(b.date));
+    // Garde 24 mois d'historique au maximum.
+    if (s.transactions.length > 5000) s.transactions = s.transactions.slice(-5000);
+  });
+  const dates = transactions.map((t) => t.date).sort();
+  openDialog(`<h3>📥 Import CSV</h3><div class="field"><div class="note">
+      ✅ ${transactions.length} opérations lues (${esc(dates[0])} → ${esc(dates[dates.length - 1])}),
+      ${added} nouvelles ajoutées. Les dépenses du mois sont maintenant calculées automatiquement.</div></div>
+    <div class="dialog-actions"><button class="primary" data-close>OK</button></div>`,
+    (d) => { d.querySelector("[data-close]").onclick = () => d.close(); });
 }
 
 // ---------- Compteurs ----------
@@ -677,6 +724,7 @@ document.addEventListener("click", (e) => {
       break;
     case "bike-settings": intervalsDialog(); break;
     case "edit-finance": editFinanceDialog(); break;
+    case "import-csv": document.getElementById("csv-file")?.click(); break;
     case "edit-countdown": editCountdownDialog(s.countdowns.find((x) => x.id === id)); break;
     case "add-countdown": editCountdownDialog(null); break;
     case "open-recipes": recipesDialog(); break;
@@ -694,6 +742,14 @@ document.addEventListener("click", (e) => {
       document.getElementById("new-note")?.focus();
       break;
     }
+  }
+});
+
+// Import de relevé CSV (élément <input type=file> recréé à chaque rendu).
+document.addEventListener("change", (e) => {
+  if (e.target.id === "csv-file" && e.target.files?.[0]) {
+    handleCSVImport(e.target.files[0]);
+    e.target.value = "";
   }
 });
 
