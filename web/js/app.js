@@ -9,18 +9,23 @@ import {
   archiveOldTasks, habitsForDay, setHabit, currentStreak, FRUITS_TARGET,
 } from "./store.js";
 import {
-  trainingProvider, schoolProvider, bankProvider,
+  trainingProvider, bankProvider,
   getIntegrations, setIntegration, testIntervalsConnection,
 } from "./providers.js";
 import { parseBankCSV, monthExpensesFrom } from "./csv.js";
 
 const app = document.getElementById("app");
 
-// Données externes (vélo / école / banque), chargées au démarrage.
-const external = { training: null, school: null, bank: null };
+// Données externes (vélo / banque), chargées au démarrage.
+const external = { training: null, bank: null };
 
 // État d'interface non persisté.
-const ui = { search: "", newTask: "", newNote: "", noteCategory: "idea" };
+const ui = { search: "", newTask: "", newNote: "", noteCategory: "idea", gradeSubject: "" };
+
+// Couleurs de matières : ordre fixe validé pour fond sombre — jamais réordonné,
+// la couleur suit la matière (ordre de première apparition dans les notes).
+const SUBJECT_COLORS = ["#3987e5", "#199e70", "#c98500", "#008300",
+                        "#9085e9", "#e66767", "#d55181", "#d95926"];
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -46,7 +51,7 @@ function render() {
     renderTasks(s),
     ...s.goals.map(renderGoal),
     renderBike(),
-    renderSchool(),
+    renderSchool(s),
     renderHabits(s),
     renderStats(s),
     renderFinance(s),
@@ -220,34 +225,272 @@ function intervalsDialog() {
 
 // ---------- École ----------
 
-function renderSchool() {
-  const sc = external.school;
-  const badge = `<span class="badge ${schoolProvider.isLive ? "live" : ""}">${schoolProvider.isLive ? "Cabanga" : "Démo"}</span>`;
-  if (!sc) return card("📚", "École", badge, `<div class="hint">Chargement…</div>`);
+/** Matières dans l'ordre de première apparition (la couleur suit la matière). */
+function schoolSubjects(grades) {
+  const subjects = [];
+  for (const g of grades) if (!subjects.includes(g.subject)) subjects.push(g.subject);
+  return subjects;
+}
+
+function subjectColor(subject, subjects) {
+  const i = subjects.indexOf(subject);
+  return SUBJECT_COLORS[(i >= 0 ? i : 0) % SUBJECT_COLORS.length];
+}
+
+function sortedGrades(s) {
+  return s.grades.slice().sort((a, b) =>
+    a.date.localeCompare(b.date) || String(a.id).localeCompare(String(b.id)));
+}
+
+function renderSchool(s) {
+  const grades = sortedGrades(s);
+  const subjects = schoolSubjects(grades);
+
+  // Moyenne générale pondérée : somme des points / somme des maximums.
+  const totalScore = grades.reduce((a, g) => a + g.score, 0);
+  const totalOutOf = grades.reduce((a, g) => a + g.outOf, 0);
+  const average = totalOutOf > 0 ? (totalScore / totalOutOf) * 100 : null;
+
+  const studyMinutes = s.study[todayKey()] || 0;
+  const studyText = studyMinutes >= 60 ? formatHours(studyMinutes / 60)
+    : studyMinutes > 0 ? `${studyMinutes} min` : "Saisir";
 
   const relative = (d) => {
     const n = daysUntil(d);
+    if (n < 0) return "en retard";
     return n === 0 ? "aujourd'hui" : n === 1 ? "demain" : `dans ${n} j`;
   };
-  const row = (chipClass, subject, title, date) => `
+
+  const hwRow = (h) => `
     <div class="list-row">
-      <span class="chip ${chipClass}">${esc(subject)}</span>
-      <span class="grow">${esc(title)}</span>
-      <span class="end">${relative(date)}</span>
+      <button class="hw-check" data-action="done-homework" data-id="${h.id}" aria-label="Fait">✓</button>
+      <span class="chip ${h.kind === "exam" ? "exam" : "hw"}">${esc(h.subject)}</span>
+      <span class="grow" data-action="edit-homework" data-id="${h.id}">${esc(h.title)}</span>
+      <span class="end" ${daysUntil(h.date) < 0 ? 'style="color:var(--s5)"' : ""}>${relative(h.date)}</span>
     </div>`;
+  const hwList = (kind, emptyText) => {
+    const items = s.homework.filter((h) => h.kind === kind)
+      .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
+    return items.map(hwRow).join("") || `<div class="hint">${emptyText}</div>`;
+  };
 
-  const study = sc.studyMinutesToday >= 60
-    ? formatHours(sc.studyMinutesToday / 60) : `${sc.studyMinutesToday} min`;
+  const subheadRow = (title, kind) => `
+    <div class="subhead-row"><span class="subhead">${title}</span>
+      <button class="mini-add" data-action="add-homework" data-kind="${kind}">＋</button></div>`;
 
-  return card("📚", "École", badge, `
+  return card("📚", "École", `<span class="badge">Saisie rapide</span>`, `
     <div class="tiles">
-      <div class="tile"><div class="value" style="color:var(--s4)">${sc.average}/${sc.averageScale}</div><div class="label">Moyenne générale</div></div>
-      <div class="tile"><div class="value">${study}</div><div class="label">Étude aujourd'hui</div></div>
+      <div class="tile"><div class="value" style="color:var(--s4)">${average != null ? `${Math.round(average)} %` : "—"}</div><div class="label">Moyenne générale</div></div>
+      <button class="tile" data-action="edit-study" style="text-align:left">
+        <div class="value ${studyMinutes ? "" : ""}" ${studyMinutes ? "" : 'style="color:var(--accent);font-size:15px"'}>${studyText}</div>
+        <div class="label">Étude aujourd'hui</div>
+      </button>
     </div>
-    <div class="subhead">Devoirs à rendre</div>
-    ${sc.homework.map((h) => row("hw", h.subject, h.title, h.dueDate)).join("") || `<div class="hint">Aucun devoir 🎉</div>`}
-    <div class="subhead">Contrôles à venir</div>
-    ${sc.exams.map((e) => row("exam", e.subject, e.title, e.date)).join("") || `<div class="hint">Aucun contrôle planifié.</div>`}`);
+    ${subheadRow("Devoirs à rendre", "hw")}
+    ${hwList("hw", "Aucun devoir 🎉")}
+    ${subheadRow("Contrôles à venir", "exam")}
+    ${hwList("exam", "Aucun contrôle planifié.")}
+    ${gradesSection(s, grades, subjects, average)}
+    <button class="row-btn" data-action="add-grade">➕ Ajouter une note <span class="chev">›</span></button>`);
+}
+
+/** Graphique d'évolution : « Moyenne » (cumulée) par défaut, ou une matière. */
+function gradesSection(s, grades, subjects, average) {
+  if (!grades.length) {
+    return `<div class="subhead">Évolution des notes</div>
+      <div class="hint">Ajoute tes notes au fur et à mesure : le graphique d'évolution par matière apparaîtra ici.</div>`;
+  }
+
+  if (ui.gradeSubject && !subjects.includes(ui.gradeSubject)) ui.gradeSubject = "";
+  const selected = ui.gradeSubject;
+
+  const chip = (label, value, color) => `
+    <button class="gchip ${selected === value ? "on" : ""}"
+      style="${selected === value ? `background:${color}22;color:${color};border-color:${color}55` : ""}"
+      data-action="grade-chip" data-subject="${esc(value)}">${esc(label)}</button>`;
+
+  const chips = [chip("Moyenne", "", "#3987e5")]
+    .concat(subjects.map((sub) => chip(sub, sub, subjectColor(sub, subjects))))
+    .join("");
+
+  let points;
+  let color;
+  if (!selected) {
+    color = "#3987e5";
+    let ss = 0, so = 0;
+    points = grades.map((g) => {
+      ss += g.score; so += g.outOf;
+      const y = (ss / so) * 100;
+      return { y, tip: `Moyenne ${Math.round(y)} % · ${shortDate(g.date)}` };
+    });
+  } else {
+    color = subjectColor(selected, subjects);
+    points = grades.filter((g) => g.subject === selected).map((g) => ({
+      y: (g.score / g.outOf) * 100,
+      tip: `${g.label ? g.label + " · " : ""}${g.score}/${g.outOf} (${Math.round((g.score / g.outOf) * 100)} %) · ${shortDate(g.date)}`,
+    }));
+  }
+
+  // Moyennes par matière (aperçu compact, cliquable).
+  const subjectRows = subjects.map((sub) => {
+    const sg = grades.filter((g) => g.subject === sub);
+    const pct = Math.round(sg.reduce((a, g) => a + g.score, 0) / sg.reduce((a, g) => a + g.outOf, 0) * 100);
+    return `<button class="subj-row" data-action="grade-chip" data-subject="${esc(sub)}">
+      <span class="dot" style="background:${subjectColor(sub, subjects)}"></span>
+      <span class="grow">${esc(sub)}</span>
+      <span class="end">${pct} % · ${sg.length} note${sg.length > 1 ? "s" : ""}</span>
+    </button>`;
+  }).join("");
+
+  // Dernières notes (point d'entrée pour modifier/supprimer).
+  const recent = grades.slice(-3).reverse().map((g) => `
+    <div class="list-row" data-action="edit-grade" data-id="${g.id}">
+      <span class="dot" style="background:${subjectColor(g.subject, subjects)}"></span>
+      <span class="grow">${esc(g.subject)}${g.label ? " — " + esc(g.label) : ""}</span>
+      <span class="end">${g.score}/${g.outOf}</span>
+    </div>`).join("");
+
+  return `
+    <div class="subhead">Évolution des notes</div>
+    <div class="chips-row">${chips}</div>
+    ${points.length >= 2
+      ? `<div class="chart-wrap">${lineChart(points, color)}</div>`
+      : `<div class="hint">Encore ${2 - points.length} note${points.length ? "" : "s"} pour tracer la courbe ${selected ? `de ${esc(selected)}` : "de moyenne"}.</div>`}
+    ${subjectRows}
+    <div class="subhead">Dernières notes (toucher pour modifier)</div>
+    ${recent}`;
+}
+
+function shortDate(dayKey) {
+  return parseDay(dayKey).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+}
+
+/** Courbe simple : marques fines, grille discrète, valeur finale étiquetée,
+ *  détail de chaque point au toucher. */
+function lineChart(points, color) {
+  const W = 520, H = 170, padT = 16, padB = 24, padR = 44, padL = 8;
+  const ys = points.map((p) => p.y);
+  let yMax = Math.min(100, Math.ceil((Math.max(...ys) + 6) / 10) * 10);
+  let yMin = Math.max(0, Math.floor((Math.min(...ys) - 6) / 10) * 10);
+  if (yMax - yMin < 20) yMin = Math.max(0, yMax - 20);
+
+  const px = (i) => padL + (i * (W - padL - padR)) / (points.length - 1);
+  const py = (v) => padT + ((yMax - v) * (H - padT - padB)) / (yMax - yMin);
+
+  let grid = "";
+  for (const v of [yMin, Math.round((yMin + yMax) / 2), yMax]) {
+    grid += `<line x1="${padL}" x2="${W - padR}" y1="${py(v)}" y2="${py(v)}" stroke="var(--hairline)" stroke-width="1"/>
+      <text x="${W - padR + 6}" y="${py(v) + 3}" font-size="10" fill="var(--muted)">${v} %</text>`;
+  }
+
+  const path = points.map((p, i) => `${i ? "L" : "M"}${px(i).toFixed(1)},${py(p.y).toFixed(1)}`).join(" ");
+  const dots = points.map((p, i) =>
+    `<circle cx="${px(i).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="4.5" fill="${color}"
+       stroke="var(--bg)" stroke-width="2" data-tip="${esc(p.tip)}"/>`).join("");
+
+  const last = points[points.length - 1];
+  const label = `<text x="${(px(points.length - 1) - 8).toFixed(1)}" y="${(py(last.y) - 10).toFixed(1)}"
+    text-anchor="end" font-size="13" font-weight="700" fill="${color}">${Math.round(last.y)} %</text>`;
+
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Évolution des notes">
+    ${grid}
+    <path d="${path}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}${label}
+  </svg>`;
+}
+
+// ---------- Dialogues École ----------
+
+function gradeDialog(grade) {
+  const isNew = !grade;
+  const subjects = schoolSubjects(sortedGrades(getState()));
+  openDialog(`
+    <h3>${isNew ? "➕ Nouvelle note" : "Modifier la note"}</h3>
+    <div class="field"><label>Matière</label>
+      <input id="g-subject" list="subjects-list" placeholder="Math, Anglais…" value="${esc(grade?.subject || ui.gradeSubject || "")}">
+      <datalist id="subjects-list">${subjects.map((s) => `<option value="${esc(s)}">`).join("")}</datalist></div>
+    <div class="field" style="display:flex;gap:10px">
+      <div style="flex:1"><label>Note obtenue</label>
+        <input id="g-score" type="number" inputmode="decimal" step="0.5" value="${grade?.score ?? ""}"></div>
+      <div style="flex:1"><label>Sur</label>
+        <input id="g-outof" type="number" inputmode="decimal" step="1" value="${grade?.outOf ?? 20}"></div>
+    </div>
+    <div class="field"><label>Intitulé (optionnel)</label>
+      <input id="g-label" placeholder="Interro ch. 4…" value="${esc(grade?.label || "")}"></div>
+    <div class="field"><label>Date</label>
+      <input type="date" id="g-date" value="${grade?.date || todayKey()}"></div>
+    <div class="dialog-actions">
+      ${isNew ? "" : `<button class="danger" data-del>Supprimer</button>`}
+      <button class="ghost" data-close>Annuler</button>
+      <button class="primary" data-save>OK</button>
+    </div>`,
+    (d) => {
+      d.querySelector("[data-close]").onclick = () => d.close();
+      if (!isNew) d.querySelector("[data-del]").onclick = () => {
+        update((st) => { st.grades = st.grades.filter((x) => x.id !== grade.id); });
+        d.close();
+      };
+      d.querySelector("[data-save]").onclick = () => {
+        const subject = d.querySelector("#g-subject").value.trim();
+        const score = Number(d.querySelector("#g-score").value);
+        const outOf = Number(d.querySelector("#g-outof").value);
+        const label = d.querySelector("#g-label").value.trim();
+        const date = d.querySelector("#g-date").value;
+        if (!subject || !date || !Number.isFinite(score) || !(outOf > 0) || score < 0) return;
+        update((st) => {
+          if (isNew) st.grades.push({ id: uid(), subject, score, outOf, label, date });
+          else Object.assign(st.grades.find((x) => x.id === grade.id), { subject, score, outOf, label, date });
+        });
+        d.close();
+      };
+    });
+}
+
+function homeworkDialog(item, presetKind = "hw") {
+  const isNew = !item;
+  const kind = item?.kind || presetKind;
+  const subjects = schoolSubjects(sortedGrades(getState()));
+  const tomorrow = (() => { const t = new Date(); t.setDate(t.getDate() + 1); return todayKey(t); })();
+  openDialog(`
+    <h3>${isNew ? (kind === "exam" ? "➕ Nouveau contrôle" : "➕ Nouveau devoir") : "Modifier"}</h3>
+    <div class="field"><label>Type</label>
+      <select id="h-kind">
+        <option value="hw" ${kind === "hw" ? "selected" : ""}>Devoir</option>
+        <option value="exam" ${kind === "exam" ? "selected" : ""}>Contrôle</option>
+      </select></div>
+    <div class="field"><label>Matière</label>
+      <input id="h-subject" list="subjects-list2" placeholder="Math, Anglais…" value="${esc(item?.subject || "")}">
+      <datalist id="subjects-list2">${subjects.map((s) => `<option value="${esc(s)}">`).join("")}</datalist></div>
+    <div class="field"><label>Intitulé</label>
+      <input id="h-title" placeholder="Exercices p. 142…" value="${esc(item?.title || "")}"></div>
+    <div class="field"><label>Pour le</label>
+      <input type="date" id="h-date" value="${item?.date || tomorrow}"></div>
+    <div class="dialog-actions">
+      ${isNew ? "" : `<button class="danger" data-del>Supprimer</button>`}
+      <button class="ghost" data-close>Annuler</button>
+      <button class="primary" data-save>OK</button>
+    </div>`,
+    (d) => {
+      d.querySelector("[data-close]").onclick = () => d.close();
+      if (!isNew) d.querySelector("[data-del]").onclick = () => {
+        update((st) => { st.homework = st.homework.filter((x) => x.id !== item.id); });
+        d.close();
+      };
+      d.querySelector("[data-save]").onclick = () => {
+        const data = {
+          kind: d.querySelector("#h-kind").value,
+          subject: d.querySelector("#h-subject").value.trim() || "Divers",
+          title: d.querySelector("#h-title").value.trim(),
+          date: d.querySelector("#h-date").value,
+        };
+        if (!data.title || !data.date) return;
+        update((st) => {
+          if (isNew) st.homework.push({ id: uid(), ...data });
+          else Object.assign(st.homework.find((x) => x.id === item.id), data);
+        });
+        d.close();
+      };
+    });
 }
 
 // ---------- Habitudes ----------
@@ -725,6 +968,26 @@ document.addEventListener("click", (e) => {
     case "bike-settings": intervalsDialog(); break;
     case "edit-finance": editFinanceDialog(); break;
     case "import-csv": document.getElementById("csv-file")?.click(); break;
+    case "add-grade": gradeDialog(null); break;
+    case "edit-grade": gradeDialog(s.grades.find((x) => x.id === id)); break;
+    case "grade-chip":
+      ui.gradeSubject = el.dataset.subject || "";
+      render();
+      break;
+    case "add-homework": homeworkDialog(null, el.dataset.kind); break;
+    case "edit-homework": homeworkDialog(s.homework.find((x) => x.id === id)); break;
+    case "done-homework":
+      update((st) => { st.homework = st.homework.filter((x) => x.id !== id); });
+      break;
+    case "edit-study":
+      sliderDialog({
+        title: "📖 Étude aujourd'hui",
+        max: 8, step: 0.25,
+        value: (s.study[todayKey()] || 0) / 60,
+        unit: (v) => formatHours(v),
+        onSave: (v) => update((st) => { st.study[todayKey()] = Math.round(v * 60); }),
+      });
+      break;
     case "edit-countdown": editCountdownDialog(s.countdowns.find((x) => x.id === id)); break;
     case "add-countdown": editCountdownDialog(null); break;
     case "open-recipes": recipesDialog(); break;
@@ -814,12 +1077,7 @@ function hideTip() { tip.style.display = "none"; }
 // ============================== Démarrage ==============================
 
 async function refreshExternal() {
-  const [training, school] = await Promise.all([
-    trainingProvider.fetchSummary().catch(() => ({ error: true })),
-    schoolProvider.fetchSummary().catch(() => null),
-  ]);
-  external.training = training;
-  external.school = school;
+  external.training = await trainingProvider.fetchSummary().catch(() => ({ error: true }));
   if (bankProvider) external.bank = await bankProvider.fetchSummary().catch(() => null);
   render();
 }
