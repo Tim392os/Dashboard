@@ -21,6 +21,8 @@
 <body>
   <main id="app"></main>
   <div class="chart-tip" id="chart-tip"></div>
+  <!-- Hors de #app : survit aux re-rendus pendant que le sélecteur de fichier est ouvert -->
+  <input type="file" id="csv-file" accept=".csv,text/csv,text/plain" style="display:none">
   <script type="module" src="js/app.js"></script>
 </body>
 </html>
