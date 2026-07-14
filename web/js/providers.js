@@ -200,28 +200,11 @@ export const trainingProvider = {
   },
 };
 
-// ---------- École (Cabanga : pas d'API publique — voir README) ----------
-
-export const schoolProvider = {
-  isLive: false,
-
-  async fetchSummary() {
-    return {
-      homework: [
-        { subject: "Math", title: "Exercices dérivées p. 142", dueDate: inDays(1) },
-        { subject: "Anglais", title: "Essay — My ambitions", dueDate: inDays(2) },
-        { subject: "Physique", title: "Rapport de labo", dueDate: inDays(4) },
-      ],
-      exams: [
-        { subject: "Histoire", title: "Contrôle ch. 5–6", date: inDays(3) },
-        { subject: "Math", title: "Interro dérivées", date: inDays(6) },
-      ],
-      average: 82,
-      averageScale: 100,
-      studyMinutesToday: 45,
-    };
-  },
-};
+// ---------- École ----------
+// Cabanga n'a pas d'API publique : la carte École fonctionne en saisie rapide
+// locale (notes, devoirs, contrôles, temps d'étude) — voir store.js. Si un
+// accès officiel apparaît un jour, réintroduire ici un provider du même
+// modèle que trainingProvider.
 
 // ---------- Banque (BNP : PSD2 réservé aux agrégateurs agréés) ----------
 // null = pas de provider connecté → la carte Finances utilise la saisie manuelle.

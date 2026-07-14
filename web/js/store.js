@@ -116,6 +116,10 @@ function seed() {
     finance: { available: 0, savings: 0, monthExpenses: 0, savingsGoal: 1000, moneySaved: 0 },
     // Opérations importées depuis un relevé CSV (banque) — jamais d'identifiants.
     transactions: [],
+    // École (saisie rapide — Cabanga n'a pas d'API publique) :
+    grades: [],   // { id, subject, score, outOf, date, label }
+    homework: [], // { id, kind: 'hw'|'exam', subject, title, date }
+    study: {},    // { 'YYYY-MM-DD': minutes }
   };
 }
 
@@ -126,7 +130,11 @@ export function initStore() {
     state = null;
   }
   if (!state || typeof state !== "object") state = seed();
-  if (!Array.isArray(state.transactions)) state.transactions = []; // migration v1 → v2
+  // Migrations des versions précédentes du schéma.
+  if (!Array.isArray(state.transactions)) state.transactions = [];
+  if (!Array.isArray(state.grades)) state.grades = [];
+  if (!Array.isArray(state.homework)) state.homework = [];
+  if (!state.study || typeof state.study !== "object") state.study = {};
   archiveOldTasks();
   save();
   return state;
