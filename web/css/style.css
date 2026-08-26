@@ -426,6 +426,13 @@ header h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; }
   color: var(--text-2);
 }
 .row-btn .chev { margin-left: auto; color: var(--muted); }
+.row-btn.add {
+  border-top: 1px solid var(--hairline);
+  margin-top: 6px;
+  padding-top: 13px;
+  color: var(--text);
+}
+.row-btn .plus { font-size: 17px; color: var(--accent); }
 
 /* ============ Compteurs ============ */
 
