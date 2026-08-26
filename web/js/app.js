@@ -16,6 +16,10 @@ import { parseBankCSV, monthExpensesFrom } from "./csv.js";
 
 const app = document.getElementById("app");
 
+// Affichée en pied de page : permet de vérifier d'un coup d'œil que la
+// dernière version est bien installée. À incrémenter avec CACHE_VERSION (sw.js).
+const APP_VERSION = 7;
+
 // Données externes (vélo / banque), chargées au démarrage.
 const external = { training: null, bank: null };
 
@@ -60,7 +64,7 @@ function render() {
     renderFinance(s),
     renderCounters(s),
     renderNotes(s),
-    `<footer>Données stockées sur cet appareil uniquement.</footer>`,
+    `<footer>Données stockées sur cet appareil uniquement · v${APP_VERSION}</footer>`,
   ].join("");
   restoreTransientInputs();
 }
@@ -123,9 +127,8 @@ function renderGoalCard(s, period) {
     ? Math.round(goals.reduce((a, g) => a + g.progress, 0) / goals.length * 100) : 0;
   const badge = goals.length
     ? `<span class="pct" style="color:${meta.color}">${goals.length > 1
-        ? `${done}/${goals.length} · ${mean}%` : `${mean}%`}</span>
-       <button class="mini-add" data-action="add-goal" data-period="${period}" aria-label="Ajouter un objectif">＋</button>`
-    : `<button class="mini-add" data-action="add-goal" data-period="${period}" aria-label="Ajouter un objectif">＋</button>`;
+        ? `${done}/${goals.length} · ${mean}%` : `${mean}%`}</span>`
+    : "";
 
   const rows = goals.map((goal) => {
     const pct = Math.round(goal.progress * 100);
@@ -145,9 +148,13 @@ function renderGoalCard(s, period) {
     </div>`;
   }).join("");
 
+  // Bouton d'ajout en bas de carte, comme « Nouvelle tâche » : c'est là que
+  // l'œil le cherche, et il reste visible même quand la carte est pleine.
+  const addRow = `<button class="row-btn add" data-action="add-goal" data-period="${period}">
+    <span class="plus">＋</span> Ajouter un objectif <span class="chev">›</span></button>`;
+
   return card(meta.icon, meta.label, badge,
-    goals.length ? rows
-      : `<div class="hint">Aucun objectif pour cette période — touche ＋ pour en ajouter un.</div>`);
+    (goals.length ? rows : `<div class="hint">Aucun objectif pour cette période.</div>`) + addRow);
 }
 
 // ---------- Vélo ----------
@@ -1153,6 +1160,23 @@ document.addEventListener("visibilitychange", () => {
   }
 });
 
+// Mise à jour automatique : sans ça, l'app installée peut rester sur une
+// ancienne version tant que le service worker en cache n'est pas remplacé.
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(() => {});
+  const hadController = Boolean(navigator.serviceWorker.controller);
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    // Une nouvelle version vient de prendre la main : recharger une seule fois
+    // pour l'appliquer (jamais au tout premier enregistrement).
+    if (!hadController || reloading) return;
+    reloading = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register("./sw.js").then((reg) => {
+    reg.update();
+    // Chercher une mise à jour à chaque retour au premier plan.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") reg.update();
+    });
+  }).catch(() => {});
 }
