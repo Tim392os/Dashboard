@@ -83,10 +83,21 @@ export { uid };
 
 // ---------- Initialisation & seed ----------
 
+/** Dimanche de la semaine en cours (semaine lundi → dimanche). */
 function endOfWeekKey() {
   const today = startOfToday();
-  const dow = (today.getDay() + 6) % 7; // 0 = lundi
-  return todayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + (7 - dow)));
+  const dow = (today.getDay() + 6) % 7; // 0 = lundi … 6 = dimanche
+  return todayKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + (6 - dow)));
+}
+
+/** Échéance proposée par défaut pour un nouvel objectif : fin de la période. */
+export function defaultDeadline(period) {
+  const today = startOfToday();
+  switch (period) {
+    case "month": return todayKey(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+    case "year": return `${today.getFullYear()}-12-31`;
+    default: return endOfWeekKey();
+  }
 }
 
 function seed() {
@@ -103,8 +114,7 @@ function seed() {
       { id: uid(), period: "week", text: "Définir mon objectif de la semaine", progress: 0, deadline: endOfWeekKey() },
       { id: uid(), period: "month", text: "Définir mon objectif du mois", progress: 0, deadline: todayKey(new Date(year, today.getMonth() + 1, 0)) },
       { id: uid(), period: "year", text: "Définir mon objectif de l'année", progress: 0, deadline: `${year}-12-31` },
-    ],
-    habits: {}, // { 'YYYY-MM-DD': { sleepHours, fruits, screenMinutes } }
+    ],    habits: {}, // { 'YYYY-MM-DD': { sleepHours, fruits, screenMinutes } }
     recipes: [],
     notes: [],
     countdowns: [

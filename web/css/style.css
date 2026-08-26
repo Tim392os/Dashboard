@@ -104,6 +104,10 @@ header h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; }
   color: var(--text-2);
   text-transform: uppercase;
   letter-spacing: 0.8px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 .card-head .spacer { flex: 1; }
 
@@ -204,7 +208,18 @@ header h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; }
 
 /* ============ Objectifs ============ */
 
-.goal-text { font-size: 17px; font-weight: 600; margin-bottom: 10px; }
+.goal-row { padding: 10px 0; }
+.goal-row + .goal-row { border-top: 1px solid var(--hairline); }
+.goal-row:first-child { padding-top: 0; }
+.goal-row:last-child { padding-bottom: 2px; }
+.goal-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+.goal-text { font-size: 17px; font-weight: 600; flex: 1; }
+.goal-text.reached { color: var(--text-2); }
 .goal-meta {
   display: flex;
   justify-content: space-between;
@@ -212,7 +227,13 @@ header h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; }
   color: var(--muted);
   margin-top: 8px;
 }
-.pct { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.pct {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.card-head .pct { font-size: 14px; }
 
 /* ============ Vélo ============ */
 

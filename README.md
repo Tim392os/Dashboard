@@ -95,8 +95,10 @@ toucher aux vues ni aux modèles**.
 
 - **Tâches** : ajout/modification/suppression, cases à cocher, archivage
   automatique des tâches terminées au changement de jour.
-- **Objectifs** : semaine / mois / année — texte, barre de progression,
-  pourcentage exact, date limite ; tout modifiable au toucher.
+- **Objectifs** : une carte par période (semaine / mois / année) pouvant
+  contenir plusieurs objectifs — texte, barre de progression, pourcentage
+  exact, date limite ; ＋ pour ajouter, toucher pour modifier ou supprimer.
+  Le badge de carte résume les objectifs atteints et l'avancement moyen.
 - **Vélo** : compte à rebours avant la prochaine course, prochains
   entraînements, charge récente (heures 7 j, TSS, CTL/ATL).
 - **École** : devoirs, contrôles, moyenne générale, temps d'étude du jour.

@@ -3,7 +3,7 @@
 // (nouvelle tâche, recherche…) sont restaurés après re-rendu.
 
 import {
-  initStore, getState, subscribe, update, uid,
+  initStore, getState, subscribe, update, uid, defaultDeadline,
   todayKey, parseDay, daysUntil, nextYearlyOccurrence,
   formatDay, formatHours, formatEuro,
   archiveOldTasks, habitsForDay, setHabit, currentStreak, FRUITS_TARGET,
@@ -36,11 +36,14 @@ const NOTE_CATS = {
   link: { label: "Lien", icon: "🔗" },
 };
 
+// `label` : titre de carte (compact — il partage la ligne avec le badge).
+// `one` : intitulé complet, utilisé dans les dialogues.
 const GOAL_META = {
-  week: { label: "Objectif de la semaine", icon: "🗓", color: "var(--accent)" },
-  month: { label: "Objectif du mois", icon: "📅", color: "var(--s4)" },
-  year: { label: "Objectif de l'année", icon: "✨", color: "var(--s3)" },
+  week: { label: "Objectifs · Semaine", one: "Objectif de la semaine", icon: "🗓", color: "var(--accent)" },
+  month: { label: "Objectifs · Mois", one: "Objectif du mois", icon: "📅", color: "var(--s4)" },
+  year: { label: "Objectifs · Année", one: "Objectif de l'année", icon: "✨", color: "var(--s3)" },
 };
+const GOAL_PERIODS = ["week", "month", "year"];
 
 // ============================== Rendu ==============================
 
@@ -49,7 +52,7 @@ function render() {
   app.innerHTML = [
     renderHeader(),
     renderTasks(s),
-    ...s.goals.map(renderGoal),
+    ...GOAL_PERIODS.map((period) => renderGoalCard(s, period)),
     renderBike(),
     renderSchool(s),
     renderHabits(s),
@@ -106,19 +109,45 @@ function renderTasks(s) {
 
 // ---------- Objectifs ----------
 
-function renderGoal(goal) {
-  const meta = GOAL_META[goal.period];
-  const pct = Math.round(goal.progress * 100);
-  return card(meta.icon, meta.label,
-    `<span class="pct" style="color:${meta.color}">${pct}%</span>`,
-    `<div data-action="edit-goal" data-id="${goal.id}">
-      <div class="goal-text">${esc(goal.text)}</div>
-      <div class="progress"><div style="width:${pct}%;background:${meta.color}"></div></div>
-      <div class="goal-meta">
-        <span>🏁 Échéance : ${formatDay(goal.deadline)}</span>
-        <span>${daysUntil(goal.deadline)} j restants</span>
+/** Une carte par période, contenant autant d'objectifs que voulu. */
+function renderGoalCard(s, period) {
+  const meta = GOAL_META[period];
+  const goals = s.goals
+    .filter((g) => g.period === period)
+    .sort((a, b) => a.deadline.localeCompare(b.deadline));
+
+  // Le badge résume : avancement moyen de la période, et compte s'il y a
+  // plusieurs objectifs.
+  const done = goals.filter((g) => g.progress >= 1).length;
+  const mean = goals.length
+    ? Math.round(goals.reduce((a, g) => a + g.progress, 0) / goals.length * 100) : 0;
+  const badge = goals.length
+    ? `<span class="pct" style="color:${meta.color}">${goals.length > 1
+        ? `${done}/${goals.length} · ${mean}%` : `${mean}%`}</span>
+       <button class="mini-add" data-action="add-goal" data-period="${period}" aria-label="Ajouter un objectif">＋</button>`
+    : `<button class="mini-add" data-action="add-goal" data-period="${period}" aria-label="Ajouter un objectif">＋</button>`;
+
+  const rows = goals.map((goal) => {
+    const pct = Math.round(goal.progress * 100);
+    const late = daysUntil(goal.deadline) < 0 && pct < 100;
+    const days = daysUntil(goal.deadline);
+    return `<div class="goal-row" data-action="edit-goal" data-id="${goal.id}">
+      <div class="goal-row-head">
+        <span class="goal-text ${pct >= 100 ? "reached" : ""}">${esc(goal.text)}</span>
+        <span class="pct" style="color:${pct >= 100 ? "var(--good)" : meta.color}">${pct}%</span>
       </div>
-    </div>`);
+      <div class="progress"><div style="width:${pct}%;background:${pct >= 100 ? "var(--good)" : meta.color}"></div></div>
+      <div class="goal-meta">
+        <span>🏁 ${formatDay(goal.deadline)}</span>
+        <span ${late ? 'style="color:var(--s5)"' : ""}>${
+          pct >= 100 ? "atteint 🎉" : late ? `${-days} j de retard` : `${days} j restants`}</span>
+      </div>
+    </div>`;
+  }).join("");
+
+  return card(meta.icon, meta.label, badge,
+    goals.length ? rows
+      : `<div class="hint">Aucun objectif pour cette période — touche ＋ pour en ajouter un.</div>`);
 }
 
 // ---------- Vélo ----------
@@ -714,31 +743,57 @@ function openDialog(html, onMount) {
   return dialog;
 }
 
-function editGoalDialog(goal) {
-  const meta = GOAL_META[goal.period];
+function goalDialog(goal, presetPeriod = "week") {
+  const isNew = !goal;
+  const period = goal?.period || presetPeriod;
+  const meta = GOAL_META[period];
+  const progress = Math.round((goal?.progress || 0) * 100);
+
   openDialog(`
-    <h3>${meta.icon} ${meta.label}</h3>
+    <h3>${meta.icon} ${isNew ? "Nouvel objectif" : meta.one}</h3>
     <div class="field"><label>Objectif</label>
-      <textarea id="g-text" rows="2">${esc(goal.text)}</textarea></div>
-    <div class="field"><label>Progression — <span id="g-pct">${Math.round(goal.progress * 100)}%</span></label>
-      <input type="range" id="g-progress" min="0" max="100" value="${Math.round(goal.progress * 100)}"></div>
+      <textarea id="g-text" rows="2" placeholder="Ex. : rouler 10 h par semaine">${esc(goal?.text || "")}</textarea></div>
+    <div class="field"><label>Période</label>
+      <select id="g-period">
+        ${GOAL_PERIODS.map((p) => `<option value="${p}" ${p === period ? "selected" : ""}>${GOAL_META[p].one}</option>`).join("")}
+      </select></div>
+    <div class="field"><label>Progression — <span id="g-pct">${progress}%</span></label>
+      <input type="range" id="g-progress" min="0" max="100" value="${progress}"></div>
     <div class="field"><label>Date limite</label>
-      <input type="date" id="g-deadline" value="${goal.deadline}"></div>
+      <input type="date" id="g-deadline" value="${goal?.deadline || defaultDeadline(period)}"></div>
     <div class="dialog-actions">
+      ${isNew ? "" : `<button class="danger" data-del>Supprimer</button>`}
       <button class="ghost" data-close>Annuler</button>
       <button class="primary" data-save>OK</button>
     </div>`,
     (d) => {
+      const deadlineInput = d.querySelector("#g-deadline");
+      let deadlineTouched = !isNew;
+      deadlineInput.addEventListener("input", () => { deadlineTouched = true; });
+      // Tant que l'échéance n'a pas été choisie à la main, elle suit la période.
+      d.querySelector("#g-period").addEventListener("change", (e) => {
+        if (!deadlineTouched) deadlineInput.value = defaultDeadline(e.target.value);
+      });
       d.querySelector("#g-progress").addEventListener("input", (e) => {
         d.querySelector("#g-pct").textContent = `${e.target.value}%`;
       });
+
       d.querySelector("[data-close]").onclick = () => d.close();
+      if (!isNew) d.querySelector("[data-del]").onclick = () => {
+        update((s) => { s.goals = s.goals.filter((x) => x.id !== goal.id); });
+        d.close();
+      };
       d.querySelector("[data-save]").onclick = () => {
+        const data = {
+          text: d.querySelector("#g-text").value.trim(),
+          period: d.querySelector("#g-period").value,
+          progress: Number(d.querySelector("#g-progress").value) / 100,
+          deadline: deadlineInput.value || defaultDeadline(d.querySelector("#g-period").value),
+        };
+        if (!data.text) return;
         update((s) => {
-          const g = s.goals.find((x) => x.id === goal.id);
-          g.text = d.querySelector("#g-text").value.trim() || g.text;
-          g.progress = Number(d.querySelector("#g-progress").value) / 100;
-          g.deadline = d.querySelector("#g-deadline").value || g.deadline;
+          if (isNew) s.goals.push({ id: uid(), ...data });
+          else Object.assign(s.goals.find((x) => x.id === goal.id), data);
         });
         d.close();
       };
@@ -937,7 +992,10 @@ document.addEventListener("click", (e) => {
       editTaskDialog(s.tasks.find((x) => x.id === id));
       break;
     case "edit-goal":
-      editGoalDialog(s.goals.find((x) => x.id === id));
+      goalDialog(s.goals.find((x) => x.id === id));
+      break;
+    case "add-goal":
+      goalDialog(null, el.dataset.period);
       break;
     case "fruits": {
       const key = todayKey();
