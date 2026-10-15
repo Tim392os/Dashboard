@@ -13,12 +13,13 @@ import {
   getIntegrations, setIntegration, testIntervalsConnection,
 } from "./providers.js";
 import { parseBankCSV, monthExpensesFrom } from "./csv.js";
+import { parseGradesText, gradeKey } from "./import-grades.js";
 
 const app = document.getElementById("app");
 
 // Affichée en pied de page : permet de vérifier d'un coup d'œil que la
 // dernière version est bien installée. À incrémenter avec CACHE_VERSION (sw.js).
-const APP_VERSION = 7;
+const APP_VERSION = 8;
 
 // Données externes (vélo / banque), chargées au démarrage.
 const external = { training: null, bank: null };
@@ -327,7 +328,8 @@ function renderSchool(s) {
     ${subheadRow("Contrôles à venir", "exam")}
     ${hwList("exam", "Aucun contrôle planifié.")}
     ${gradesSection(s, grades, subjects, average)}
-    <button class="row-btn" data-action="add-grade">➕ Ajouter une note <span class="chev">›</span></button>`);
+    <button class="row-btn add" data-action="add-grade"><span class="plus">＋</span> Ajouter une note <span class="chev">›</span></button>
+    <button class="row-btn" data-action="import-grades">📋 Coller plusieurs notes <span class="chev">›</span></button>`);
 }
 
 /** Graphique d'évolution : « Moyenne » (cumulée) par défaut, ou une matière. */
@@ -478,6 +480,72 @@ function gradeDialog(grade) {
           else Object.assign(st.grades.find((x) => x.id === grade.id), { subject, score, outOf, label, date });
         });
         d.close();
+      };
+    });
+}
+
+function importGradesDialog() {
+  const example = "Math | 15/20 | 12/10/2026 | Interro dérivées\nAnglais | 45/50 | 09/10/2026\nHistoire | 6/10";
+  openDialog(`
+    <h3>📋 Coller plusieurs notes</h3>
+    <div class="field">
+      <label>Une note par ligne — <b>Matière | note/barème | date | intitulé</b></label>
+      <textarea id="ig-text" rows="7" spellcheck="false" autocapitalize="off"
+        placeholder="${esc(example)}"></textarea>
+      <div class="note">La date et l'intitulé sont facultatifs (sans date : aujourd'hui).
+      Le « ; » marche aussi comme séparateur.</div>
+    </div>
+    <div class="field"><div class="note" id="ig-status">Colle ton bloc de notes, puis OK.</div></div>
+    <div class="dialog-actions">
+      <button class="ghost" data-close>Annuler</button>
+      <button class="primary" data-save>OK</button>
+    </div>`,
+    (d) => {
+      const status = d.querySelector("#ig-status");
+      const field = d.querySelector("#ig-text");
+
+      // Aperçu en direct : on voit ce qui sera importé avant de valider.
+      field.addEventListener("input", () => {
+        const { grades, errors } = parseGradesText(field.value);
+        if (!grades.length && !errors.length) {
+          status.textContent = "Colle ton bloc de notes, puis OK.";
+          return;
+        }
+        status.innerHTML = `${grades.length} note${grades.length > 1 ? "s" : ""} reconnue${grades.length > 1 ? "s" : ""}`
+          + (errors.length
+            ? ` · ⚠️ ${errors.length} ligne${errors.length > 1 ? "s" : ""} à corriger :<br>`
+              + errors.slice(0, 3).map((e) => `ligne ${e.line} — ${esc(e.reason)}`).join("<br>")
+            : " ✅");
+      });
+
+      d.querySelector("[data-close]").onclick = () => d.close();
+      d.querySelector("[data-save]").onclick = () => {
+        const { grades, errors } = parseGradesText(field.value);
+        if (!grades.length) {
+          status.innerHTML = errors.length
+            ? `⚠️ Aucune ligne lisible. Première erreur — ligne ${errors[0].line} : ${esc(errors[0].reason)}`
+            : "Rien à importer.";
+          return;
+        }
+        let added = 0, skipped = 0;
+        update((s) => {
+          const known = new Set(s.grades.map(gradeKey));
+          for (const g of grades) {
+            const key = gradeKey(g);
+            if (known.has(key)) { skipped++; continue; }
+            known.add(key);
+            s.grades.push({ id: uid(), ...g });
+            added++;
+          }
+        });
+        d.close();
+        openDialog(`<h3>📋 Import terminé</h3><div class="field"><div class="note">
+            ✅ ${added} note${added > 1 ? "s" : ""} ajoutée${added > 1 ? "s" : ""}${
+              skipped ? ` · ${skipped} doublon${skipped > 1 ? "s" : ""} ignoré${skipped > 1 ? "s" : ""}` : ""}${
+              errors.length ? ` · ⚠️ ${errors.length} ligne${errors.length > 1 ? "s" : ""} ignorée${errors.length > 1 ? "s" : ""}` : ""}
+          </div></div>
+          <div class="dialog-actions"><button class="primary" data-close>OK</button></div>`,
+          (d2) => { d2.querySelector("[data-close]").onclick = () => d2.close(); });
       };
     });
 }
@@ -1034,6 +1102,7 @@ document.addEventListener("click", (e) => {
     case "edit-finance": editFinanceDialog(); break;
     case "import-csv": document.getElementById("csv-file")?.click(); break;
     case "add-grade": gradeDialog(null); break;
+    case "import-grades": importGradesDialog(); break;
     case "edit-grade": gradeDialog(s.grades.find((x) => x.id === id)); break;
     case "grade-chip":
       ui.gradeSubject = el.dataset.subject || "";
