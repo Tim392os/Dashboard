@@ -495,6 +495,72 @@ header h1 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; }
 }
 .recipe-row textarea::placeholder { color: var(--muted); }
 
+/* ============ Captures d'écran (recopie des notes) ============ */
+
+.shot-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.shot-cell { position: relative; }
+.shot-cell img {
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  /* « contain » et non « cover » : une capture rognée n'est plus reconnaissable. */
+  object-fit: contain;
+  background: #0f0f12;
+  border-radius: 12px;
+  border: 1px solid var(--stroke);
+  display: block;
+}
+.shot-del {
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  background: #2a2a30;
+  border: 1px solid var(--stroke);
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+
+/* La capture occupe la moitié haute : lisible, sans chasser le formulaire. */
+.shot-view {
+  background: #000;
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+.shot-view img {
+  width: 100%;
+  max-height: 42vh;
+  object-fit: contain;
+  display: block;
+}
+.shot-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  font-size: 13px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.shot-nav button {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.row-btn .badge { margin-left: 2px; }
+
 /* ============ Dialogues ============ */
 
 dialog {
