@@ -14,18 +14,28 @@ import {
 } from "./providers.js";
 import { parseBankCSV, monthExpensesFrom } from "./csv.js";
 import { parseGradesText, gradeKey } from "./import-grades.js";
+import { addShot, listShots, countShots, deleteShot } from "./photos.js";
 
 const app = document.getElementById("app");
 
 // Affichée en pied de page : permet de vérifier d'un coup d'œil que la
 // dernière version est bien installée. À incrémenter avec CACHE_VERSION (sw.js).
-const APP_VERSION = 8;
+const APP_VERSION = 9;
 
 // Données externes (vélo / banque), chargées au démarrage.
 const external = { training: null, bank: null };
 
 // État d'interface non persisté.
 const ui = { search: "", newTask: "", newNote: "", noteCategory: "idea", gradeSubject: "" };
+
+// Nombre de captures stockées. IndexedDB est asynchrone alors que le rendu est
+// synchrone : on garde le compte en mémoire et on redessine quand il change.
+let shotCount = 0;
+function refreshShotCount() {
+  return countShots().then((n) => {
+    if (n !== shotCount) { shotCount = n; render(); }
+  }).catch(() => {});
+}
 
 // Couleurs de matières : ordre fixe validé pour fond sombre — jamais réordonné,
 // la couleur suit la matière (ordre de première apparition dans les notes).
@@ -329,6 +339,7 @@ function renderSchool(s) {
     ${hwList("exam", "Aucun contrôle planifié.")}
     ${gradesSection(s, grades, subjects, average)}
     <button class="row-btn add" data-action="add-grade"><span class="plus">＋</span> Ajouter une note <span class="chev">›</span></button>
+    <button class="row-btn" data-action="shots">📸 Captures à recopier${shotCount ? ` <span class="badge">${shotCount}</span>` : ""} <span class="chev">›</span></button>
     <button class="row-btn" data-action="import-grades">📋 Coller plusieurs notes <span class="chev">›</span></button>`);
 }
 
@@ -546,6 +557,147 @@ function importGradesDialog() {
           </div></div>
           <div class="dialog-actions"><button class="primary" data-close>OK</button></div>`,
           (d2) => { d2.querySelector("[data-close]").onclick = () => d2.close(); });
+      };
+    });
+}
+
+/** Galerie des captures : ajouter, ouvrir pour recopier, supprimer. */
+async function shotsDialog() {
+  let shots = [];
+  try {
+    shots = await listShots();
+  } catch {
+    openDialog(`<h3>📸 Captures</h3><div class="field"><div class="note">
+        ⚠️ Impossible d'ouvrir le stockage des images sur ce navigateur.</div></div>
+      <div class="dialog-actions"><button class="primary" data-close>OK</button></div>`,
+      (d) => { d.querySelector("[data-close]").onclick = () => d.close(); });
+    return;
+  }
+
+  const urls = shots.map((s) => URL.createObjectURL(s.blob));
+  const grid = shots.map((s, i) => `
+    <div class="shot-cell">
+      <img src="${urls[i]}" alt="Capture du ${new Date(s.addedAt).toLocaleDateString("fr-FR")}"
+        data-open="${s.id}" loading="lazy">
+      <button class="shot-del" data-del-shot="${s.id}" aria-label="Supprimer">×</button>
+    </div>`).join("");
+
+  const dialog = openDialog(`
+    <h3>📸 Captures à recopier</h3>
+    ${shots.length
+      ? `<div class="shot-grid">${grid}</div>
+         <div class="field"><div class="note">Touche une capture : elle s'affiche en grand avec le
+         formulaire de saisie juste en dessous.</div></div>`
+      : `<div class="field"><div class="note">Aucune capture. Ajoute tes copies d'écran de Cabanga :
+         elles resteront affichées pendant que tu recopies tes notes, sans changer d'application.
+         Elles ne quittent jamais ce téléphone.</div></div>`}
+    <div class="dialog-actions">
+      <button class="ghost" data-close>Fermer</button>
+      <button class="primary" data-add>＋ Ajouter</button>
+    </div>`,
+    (d) => {
+      d.addEventListener("close", () => urls.forEach(URL.revokeObjectURL));
+      d.querySelector("[data-close]").onclick = () => d.close();
+      d.querySelector("[data-add]").onclick = () => document.getElementById("shot-file")?.click();
+
+      d.querySelectorAll("[data-open]").forEach((img) => img.onclick = () => {
+        const i = shots.findIndex((s) => s.id === img.dataset.open);
+        d.close();
+        transcribeDialog(shots, i);
+      });
+      d.querySelectorAll("[data-del-shot]").forEach((btn) => btn.onclick = async () => {
+        await deleteShot(btn.dataset.delShot).catch(() => {});
+        await refreshShotCount();
+        d.close();
+        shotsDialog();
+      });
+    });
+  return dialog;
+}
+
+/** Capture en grand + saisie des notes juste en dessous. */
+function transcribeDialog(shots, index) {
+  let i = Math.max(0, Math.min(index, shots.length - 1));
+  let added = 0;
+  const urls = shots.map((s) => URL.createObjectURL(s.blob));
+  const subjects = schoolSubjects(sortedGrades(getState()));
+  const multiple = shots.length > 1;
+
+  openDialog(`
+    <div class="shot-view">
+      <img id="tr-img" src="${urls[i]}" alt="Capture à recopier">
+    </div>
+    ${multiple ? `<div class="shot-nav">
+      <button data-prev aria-label="Précédente">‹</button>
+      <span id="tr-pos">${i + 1} / ${shots.length}</span>
+      <button data-next aria-label="Suivante">›</button>
+    </div>` : ""}
+    <div class="field" style="display:flex;gap:8px;margin-top:12px">
+      <div style="flex:2"><label>Matière</label>
+        <input id="tr-subject" list="tr-subjects" autocapitalize="words"
+          value="${esc(ui.gradeSubject || "")}">
+        <datalist id="tr-subjects">${subjects.map((s) => `<option value="${esc(s)}">`).join("")}</datalist></div>
+      <div style="flex:1"><label>Note</label>
+        <input id="tr-score" type="number" inputmode="decimal" step="0.5"></div>
+      <div style="flex:1"><label>Sur</label>
+        <input id="tr-outof" type="number" inputmode="decimal" step="1" value="20"></div>
+    </div>
+    <div class="field" style="display:flex;gap:8px">
+      <div style="flex:3"><label>Intitulé (optionnel)</label>
+        <input id="tr-label" placeholder="Interro ch. 4"></div>
+      <div style="flex:2"><label>Date</label>
+        <input id="tr-date" type="date" value="${todayKey()}"></div>
+    </div>
+    <div class="field"><div class="note" id="tr-status">Ajoute tes notes une par une : la capture reste affichée.</div></div>
+    <div class="dialog-actions">
+      <button class="danger" data-del>Supprimer</button>
+      <button class="ghost" data-close>Fermer</button>
+      <button class="primary" data-add>Ajouter la note</button>
+    </div>`,
+    (d) => {
+      const status = d.querySelector("#tr-status");
+      const img = d.querySelector("#tr-img");
+      d.addEventListener("close", () => urls.forEach(URL.revokeObjectURL));
+
+      const show = (n) => {
+        i = (n + shots.length) % shots.length;
+        img.src = urls[i];
+        const pos = d.querySelector("#tr-pos");
+        if (pos) pos.textContent = `${i + 1} / ${shots.length}`;
+      };
+      if (multiple) {
+        d.querySelector("[data-prev]").onclick = () => show(i - 1);
+        d.querySelector("[data-next]").onclick = () => show(i + 1);
+      }
+
+      d.querySelector("[data-close]").onclick = () => d.close();
+      d.querySelector("[data-del]").onclick = async () => {
+        await deleteShot(shots[i].id).catch(() => {});
+        await refreshShotCount();
+        d.close();
+        shotsDialog();
+      };
+
+      d.querySelector("[data-add]").onclick = () => {
+        const subject = d.querySelector("#tr-subject").value.trim();
+        const score = Number(d.querySelector("#tr-score").value);
+        const outOf = Number(d.querySelector("#tr-outof").value);
+        const label = d.querySelector("#tr-label").value.trim();
+        const date = d.querySelector("#tr-date").value || todayKey();
+        if (!subject) { status.textContent = "⚠️ Indique la matière."; return; }
+        if (!Number.isFinite(score) || !(outOf > 0) || score < 0 || score > outOf) {
+          status.textContent = "⚠️ Note invalide (elle doit être comprise entre 0 et le barème).";
+          return;
+        }
+        update((s) => s.grades.push({ id: uid(), subject, score, outOf, label, date }));
+        added++;
+        ui.gradeSubject = subject; // la matière reste, pour enchaîner
+        // Vider seulement la note et l'intitulé : on enchaîne sur la même page.
+        d.querySelector("#tr-score").value = "";
+        d.querySelector("#tr-label").value = "";
+        d.querySelector("#tr-score").focus();
+        status.innerHTML = `✅ ${added} note${added > 1 ? "s" : ""} ajoutée${added > 1 ? "s" : ""} — `
+          + `dernière : ${esc(subject)} ${score}/${outOf}`;
       };
     });
 }
@@ -1103,6 +1255,7 @@ document.addEventListener("click", (e) => {
     case "import-csv": document.getElementById("csv-file")?.click(); break;
     case "add-grade": gradeDialog(null); break;
     case "import-grades": importGradesDialog(); break;
+    case "shots": shotsDialog(); break;
     case "edit-grade": gradeDialog(s.grades.find((x) => x.id === id)); break;
     case "grade-chip":
       ui.gradeSubject = el.dataset.subject || "";
@@ -1148,7 +1301,36 @@ document.addEventListener("change", (e) => {
     handleCSVImport(e.target.files[0]);
     e.target.value = "";
   }
+  if (e.target.id === "shot-file" && e.target.files?.length) {
+    handleShotImport([...e.target.files]);
+    e.target.value = "";
+  }
 });
+
+/** Enregistre les captures choisies, puis rouvre la galerie. */
+async function handleShotImport(files) {
+  let ok = 0;
+  const failed = [];
+  for (const file of files) {
+    try {
+      await addShot(file);
+      ok++;
+    } catch (err) {
+      failed.push(err?.name === "QuotaExceededError"
+        ? "espace de stockage plein" : "format non reconnu");
+    }
+  }
+  await refreshShotCount();
+  document.querySelectorAll("dialog").forEach((d) => d.close());
+  if (!ok && failed.length) {
+    openDialog(`<h3>📸 Captures</h3><div class="field"><div class="note">
+        ⚠️ Aucune capture ajoutée (${esc(failed[0])}).</div></div>
+      <div class="dialog-actions"><button class="primary" data-close>OK</button></div>`,
+      (d) => { d.querySelector("[data-close]").onclick = () => d.close(); });
+    return;
+  }
+  shotsDialog();
+}
 
 // Saisie transitoire (nouvelle tâche, note, recherche).
 document.addEventListener("input", (e) => {
@@ -1220,6 +1402,7 @@ initStore();
 subscribe(render);
 render();
 refreshExternal();
+refreshShotCount();
 
 // Changement de jour / retour au premier plan : archivage + rafraîchissement.
 document.addEventListener("visibilitychange", () => {
