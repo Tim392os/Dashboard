@@ -20,7 +20,7 @@ const app = document.getElementById("app");
 
 // Affichée en pied de page : permet de vérifier d'un coup d'œil que la
 // dernière version est bien installée. À incrémenter avec CACHE_VERSION (sw.js).
-const APP_VERSION = 9;
+const APP_VERSION = 10;
 
 // Données externes (vélo / banque), chargées au démarrage.
 const external = { training: null, bank: null };
@@ -325,7 +325,7 @@ function renderSchool(s) {
     <div class="subhead-row"><span class="subhead">${title}</span>
       <button class="mini-add" data-action="add-homework" data-kind="${kind}">＋</button></div>`;
 
-  return card("📚", "École", `<span class="badge">Saisie rapide</span>`, `
+  return card("📚", "École", `<button class="badge" data-action="school-options">Saisie rapide · ⚙︎</button>`, `
     <div class="tiles">
       <div class="tile"><div class="value" style="color:var(--s4)">${average != null ? `${Math.round(average)} %` : "—"}</div><div class="label">Moyenne générale</div></div>
       <button class="tile" data-action="edit-study" style="text-align:left">
@@ -698,6 +698,63 @@ function transcribeDialog(shots, index) {
         d.querySelector("#tr-score").focus();
         status.innerHTML = `✅ ${added} note${added > 1 ? "s" : ""} ajoutée${added > 1 ? "s" : ""} — `
           + `dernière : ${esc(subject)} ${score}/${outOf}`;
+      };
+    });
+}
+
+/** Une note au format d'import : « Math | 15/20 | 12/10/2026 | Interro ». */
+function gradeToLine(g) {
+  const [y, m, d] = g.date.split("-");
+  return [g.subject, `${g.score}/${g.outOf}`, `${d}/${m}/${y}`, g.label]
+    .filter((f) => f !== "" && f != null).join(" | ");
+}
+
+/** Réglages de la carte École : sauvegarde et remise à zéro des notes. */
+function schoolOptionsDialog() {
+  const grades = sortedGrades(getState());
+  const backup = grades.map(gradeToLine).join("\n");
+  const span = grades.length
+    ? `${formatDay(grades[0].date)} → ${formatDay(grades[grades.length - 1].date)}` : "";
+
+  openDialog(`
+    <h3>📚 Réglages École</h3>
+    ${grades.length ? `
+      <div class="field">
+        <label>Sauvegarde — ${grades.length} note${grades.length > 1 ? "s" : ""} (${esc(span)})</label>
+        <textarea id="so-backup" rows="4" readonly>${esc(backup)}</textarea>
+        <div class="note">Copie ce texte avant d'effacer : il se recolle tel quel dans
+        « Coller plusieurs notes ».</div>
+      </div>
+      <div class="field"><div class="note" id="so-status"></div></div>
+      <div class="dialog-actions">
+        <button class="ghost" data-close>Fermer</button>
+        <button class="danger" data-wipe>Effacer toutes les notes</button>
+      </div>`
+    : `<div class="field"><div class="note">Aucune note enregistrée pour l'instant.</div></div>
+       <div class="dialog-actions"><button class="primary" data-close>Fermer</button></div>`}`,
+    (d) => {
+      d.querySelector("[data-close]").onclick = () => d.close();
+      const wipe = d.querySelector("[data-wipe]");
+      if (!wipe) return;
+
+      const status = d.querySelector("#so-status");
+      let armed = false;
+      // Deux temps : la suppression est irréversible, un seul toucher ne suffit pas.
+      wipe.onclick = () => {
+        if (!armed) {
+          armed = true;
+          wipe.textContent = `Confirmer : effacer ${grades.length} note${grades.length > 1 ? "s" : ""}`;
+          status.innerHTML = "⚠️ Action irréversible. Les devoirs, contrôles et captures "
+            + "ne sont pas touchés. Touche à nouveau pour confirmer.";
+          return;
+        }
+        update((s) => { s.grades = []; });
+        d.close();
+        openDialog(`<h3>📚 Notes effacées</h3><div class="field"><div class="note">
+            ✅ ${grades.length} note${grades.length > 1 ? "s" : ""} supprimée${grades.length > 1 ? "s" : ""}.
+            Le tableau repart de zéro.</div></div>
+          <div class="dialog-actions"><button class="primary" data-close>OK</button></div>`,
+          (d2) => { d2.querySelector("[data-close]").onclick = () => d2.close(); });
       };
     });
 }
@@ -1256,6 +1313,7 @@ document.addEventListener("click", (e) => {
     case "add-grade": gradeDialog(null); break;
     case "import-grades": importGradesDialog(); break;
     case "shots": shotsDialog(); break;
+    case "school-options": schoolOptionsDialog(); break;
     case "edit-grade": gradeDialog(s.grades.find((x) => x.id === id)); break;
     case "grade-chip":
       ui.gradeSubject = el.dataset.subject || "";
