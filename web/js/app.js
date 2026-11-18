@@ -20,7 +20,7 @@ const app = document.getElementById("app");
 
 // Affichée en pied de page : permet de vérifier d'un coup d'œil que la
 // dernière version est bien installée. À incrémenter avec CACHE_VERSION (sw.js).
-const APP_VERSION = 10;
+const APP_VERSION = 11;
 
 // Données externes (vélo / banque), chargées au démarrage.
 const external = { training: null, bank: null };
@@ -39,8 +39,12 @@ function refreshShotCount() {
 
 // Couleurs de matières : ordre fixe validé pour fond sombre — jamais réordonné,
 // la couleur suit la matière (ordre de première apparition dans les notes).
+// Dix teintes : au-delà de huit matières, les dernières reprenaient la couleur
+// des premières. Le nom de la matière est toujours écrit à côté de la pastille,
+// donc la couleur ne porte jamais l'information à elle seule.
 const SUBJECT_COLORS = ["#3987e5", "#199e70", "#c98500", "#008300",
-                        "#9085e9", "#e66767", "#d55181", "#d95926"];
+                        "#9085e9", "#e66767", "#d55181", "#d95926",
+                        "#17a8bd", "#a9743c"];
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
